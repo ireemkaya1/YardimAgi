@@ -1,8 +1,21 @@
+-- =====================================================================
+--  YardimAgi - veritabani semasi (pg_dump ciktisindan uretildi)
+--
+--  Bu dosya Docker tarafindan OTOMATIK calistirilir; elle calistirmaniza
+--  gerek yoktur.
+--
+--  Orijinal dump'tan farki:
+--    - "SET transaction_timeout" satiri cikarildi
+--      (PostgreSQL 17+ ayari; 16 surumunde hata veriyordu)
+--    - "\restrict" / "\unrestrict" satirlari cikarildi
+--      (psql 18'e ozel; her dump'ta degistigi icin git'te surekli fark uretiyordu)
+--    - Eksik olan tablo/sutun aciklamalari ve v_data_dictionary eklendi
+-- =====================================================================
+
 --
 -- PostgreSQL database dump
 --
 
-\restrict hbLVrdR8XiiGisTrd3tPFzdOA6CDvLUvggIdh0XA6gNevl1fw2wcvmBDJJmJxkt
 
 -- Dumped from database version 16.15 (Debian 16.15-1.pgdg13+2)
 -- Dumped by pg_dump version 18.6
@@ -12,7 +25,6 @@
 SET statement_timeout = 0;
 SET lock_timeout = 0;
 SET idle_in_transaction_session_timeout = 0;
-SET transaction_timeout = 0;
 SET client_encoding = 'UTF8';
 SET standard_conforming_strings = on;
 SELECT pg_catalog.set_config('search_path', '', false);
@@ -3890,5 +3902,212 @@ ALTER TABLE ONLY public.users
 -- PostgreSQL database dump complete
 --
 
-\unrestrict hbLVrdR8XiiGisTrd3tPFzdOA6CDvLUvggIdh0XA6gNevl1fw2wcvmBDJJmJxkt
+
+
+-- =====================================================================
+--  EK: tablo/sutun aciklamalari + v_data_dictionary gorunumu
+--  (dump alinan veritabaninda eksikti; v_install_check bu yuzden EKSIK diyordu)
+-- =====================================================================
+SET search_path = public;
+
+-- =====================================================================
+--  YardımAğı - 11_comments.sql : Tablo ve sütun açıklamaları
+--
+--  Bu dosya veritabanının davranışını DEĞİŞTİRMEZ. Açıklamaları
+--  PostgreSQL'in kendi sözlüğüne yazar; DBeaver, pgAdmin ve DataGrip
+--  bunları tablo görünümünde "Comment" sütununda gösterir.
+--
+--  Sorgulamak için:
+--    SELECT * FROM v_data_dictionary;
+-- =====================================================================
+
+
+-- centers : Yardım merkezleri
+COMMENT ON TABLE centers IS 'Yardım merkezleri. Yardımların depolandığı yerler. Ayrı tablo olması 2NF/3NF gereği: merkez bilgisi stok satırlarında tekrarlansaydı koordinat düzeltmesi onlarca satırı güncellemeyi gerektirirdi.';
+COMMENT ON COLUMN centers.id IS 'Birincil anahtar';
+COMMENT ON COLUMN centers.name IS 'Merkez adı (benzersiz)';
+COMMENT ON COLUMN centers.address IS 'Açık adres';
+COMMENT ON COLUMN centers.phone IS 'Merkez telefonu';
+COMMENT ON COLUMN centers.latitude IS 'Enlem — mesafe hesabında kullanılır';
+COMMENT ON COLUMN centers.longitude IS 'Boylam';
+COMMENT ON COLUMN centers.is_active IS 'Merkez şu an hizmet veriyor mu';
+COMMENT ON COLUMN centers.created_at IS 'Kayıt zamanı';
+COMMENT ON COLUMN centers.updated_at IS 'Son değişiklik zamanı';
+
+-- users : Kullanıcılar
+COMMENT ON TABLE users IS 'Kullanıcılar. Üç rol tek tabloda: görevli (yönetim), gönüllü (taşıma) ve admin. Merkez yalnızca görevliye atanır; gönüllü merkeze bağlı değildir, her merkezden görev alabilir.';
+COMMENT ON COLUMN users.id IS 'Birincil anahtar';
+COMMENT ON COLUMN users.full_name IS 'Ad soyad';
+COMMENT ON COLUMN users.email IS 'Girişte kullanılır; büyük/küçük harf farkı gözetmeden benzersiz';
+COMMENT ON COLUMN users.phone IS 'Telefon';
+COMMENT ON COLUMN users.password_hash IS 'Şifrelenmiş parola; düz şifre saklanmaz';
+COMMENT ON COLUMN users.role IS 'ATTENDANT görevli / VOLUNTEER gönüllü / ADMIN';
+COMMENT ON COLUMN users.center_id IS 'Görevlinin sorumlu olduğu merkez. Stok ve paket işlemleri sadece burada yapılabilir. Gönüllü ve admin için boştur';
+COMMENT ON COLUMN users.is_active IS 'Pasif kullanıcı hiçbir işlem yapamaz';
+COMMENT ON COLUMN users.created_at IS 'Kayıt zamanı';
+COMMENT ON COLUMN users.updated_at IS 'Son değişiklik zamanı';
+
+-- categories : Yardım türleri
+COMMENT ON TABLE categories IS 'Yardım türleri. Su, gıda, battaniye gibi ürün türleri. Kod tek yerde tanımlı; metin olarak tekrarlansaydı ''su'' ile ''Su'' ayrı ürün sayılırdı.';
+COMMENT ON COLUMN categories.id IS 'Birincil anahtar';
+COMMENT ON COLUMN categories.code IS 'Sistem kodu: WATER, FOOD… Yalnız büyük harf ve alt çizgi';
+COMMENT ON COLUMN categories.name IS 'Ekranda görünen ad: “Su”';
+COMMENT ON COLUMN categories.unit IS 'Birim: şişe, koli, adet';
+COMMENT ON COLUMN categories.is_active IS 'Kategori silinmez, pasif yapılır';
+COMMENT ON COLUMN categories.created_at IS 'Kayıt zamanı';
+
+-- stocks : Stoklar (merkez × ürün)
+COMMENT ON TABLE stocks IS 'Stoklar (merkez × ürün). Hangi merkezde hangi üründen kaç tane olduğu. Merkez + ürün çifti benzersizdir.';
+COMMENT ON COLUMN stocks.id IS 'Birincil anahtar';
+COMMENT ON COLUMN stocks.center_id IS 'Hangi merkez';
+COMMENT ON COLUMN stocks.category_id IS 'Hangi ürün';
+COMMENT ON COLUMN stocks.total IS 'Depodaki toplam miktar';
+COMMENT ON COLUMN stocks.reserved IS 'Bir göreve ayrılmış, henüz çıkmamış miktar';
+COMMENT ON COLUMN stocks.available IS 'Otomatik hesaplanır: toplam − ayrılmış. Elle yazılamaz';
+COMMENT ON COLUMN stocks.low_stock_alert IS 'Kritik stok sınırı; altına düşerse dashboard uyarır';
+COMMENT ON COLUMN stocks.updated_at IS 'Son değişiklik zamanı';
+
+-- stock_transactions : Stok hareketleri (defter)
+COMMENT ON TABLE stock_transactions IS 'Stok hareketleri (defter). Stokun hesap defteri. Stok miktarı yalnızca buraya eklenen hareketlerle değişir; doğrudan güncelleme trigger tarafından reddedilir. Bakiye sütunu yoktur, hareketlerin toplamından hesaplanır.';
+COMMENT ON COLUMN stock_transactions.id IS 'Birincil anahtar';
+COMMENT ON COLUMN stock_transactions.stock_id IS 'Hangi stok satırı etkilendi';
+COMMENT ON COLUMN stock_transactions.type IS 'IN giriş / RESERVE ayırma / RELEASE geri bırakma / OUT çıkış / CORRECTION düzeltme';
+COMMENT ON COLUMN stock_transactions.quantity IS 'Miktar (yalnız düzeltmede negatif olabilir)';
+COMMENT ON COLUMN stock_transactions.delivery_id IS 'Hareket bir teslimattan kaynaklandıysa hangisi';
+COMMENT ON COLUMN stock_transactions.note IS 'Açıklama (düzeltmelerde zorunlu)';
+COMMENT ON COLUMN stock_transactions.created_by IS 'Hareketi yapan kullanıcı; boşsa sistem';
+COMMENT ON COLUMN stock_transactions.created_at IS 'Hareket zamanı';
+
+-- requests : Yardım talepleri
+COMMENT ON TABLE requests IS 'Yardım talepleri. Sahadaki görevlinin açtığı talebin genel bilgileri. status teknik olarak türetilebilir ama durum makinesi ve hızlı liste filtresi için sütun olarak tutulur; trigger senkron tutar.';
+COMMENT ON COLUMN requests.id IS 'Birincil anahtar';
+COMMENT ON COLUMN requests.created_by IS 'Talebi açan saha görevlisi veya admin';
+COMMENT ON COLUMN requests.latitude IS 'İhtiyacın olduğu konum';
+COMMENT ON COLUMN requests.longitude IS 'Boylam';
+COMMENT ON COLUMN requests.address IS 'Adres tarifi';
+COMMENT ON COLUMN requests.people_number IS 'Kaç kişi için (1–10000)';
+COMMENT ON COLUMN requests.urgency IS 'LOW / MEDIUM / HIGH / CRITICAL';
+COMMENT ON COLUMN requests.description IS 'Serbest açıklama — yapay zekanın okuduğu metin';
+COMMENT ON COLUMN requests.contact_name IS 'İhtiyaç sahibinin adı; blockchain''e yazılmaz';
+COMMENT ON COLUMN requests.contact_phone IS 'İletişim telefonu; blockchain''e yazılmaz';
+COMMENT ON COLUMN requests.status IS 'OPEN → MATCHED → ASSIGNED → PREPARING → IN_TRANSIT → DELIVERED / CANCELLED';
+COMMENT ON COLUMN requests.cancel_reason IS 'İptal nedeni';
+COMMENT ON COLUMN requests.cancelled_at IS 'İptal zamanı; durum CANCELLED ise dolu olmak zorunda';
+COMMENT ON COLUMN requests.created_at IS 'Talebin açılma zamanı';
+COMMENT ON COLUMN requests.updated_at IS 'Son değişiklik zamanı';
+
+-- request_items : Talep kalemleri
+COMMENT ON TABLE request_items IS 'Talep kalemleri. Talepte hangi üründen kaç tane istendiği. Kısmi teslimat olmadığı için teslim edilen kalemler de bunlardır; ayrı bir teslimat kalemi tablosu yoktur.';
+COMMENT ON COLUMN request_items.id IS 'Birincil anahtar';
+COMMENT ON COLUMN request_items.request_id IS 'Hangi talep';
+COMMENT ON COLUMN request_items.category_id IS 'Hangi ürün (bir talepte aynı kategori iki kez geçemez)';
+COMMENT ON COLUMN request_items.quantity IS 'Kaç adet isteniyor';
+
+-- matches : Eşleştirme kararları
+COMMENT ON TABLE matches IS 'Eşleştirme kararları. Talebi hangi merkezin karşılayacağı. Yalnızca karara bağlanmış satırlar tutulur; aday merkez listesi stoklardan anlık hesaplanır.';
+COMMENT ON COLUMN matches.id IS 'Birincil anahtar';
+COMMENT ON COLUMN matches.request_id IS 'Hangi talep';
+COMMENT ON COLUMN matches.center_id IS 'Hangi merkez';
+COMMENT ON COLUMN matches.distance_km IS 'Talebe uzaklık. Anlık görüntü: merkez koordinatı sonradan düzelse bile değişmez';
+COMMENT ON COLUMN matches.strategy IS 'NEAREST / RANDOM / FIRST_AVAILABLE — deney karşılaştırması için';
+COMMENT ON COLUMN matches.status IS 'ACCEPTED seçildi / REJECTED reddedildi / EXPIRED geçersizleşti';
+COMMENT ON COLUMN matches.created_at IS 'Kayıt zamanı';
+COMMENT ON COLUMN matches.decided_at IS 'Kararın verildiği an';
+
+-- deliveries : Teslimatlar (görevler)
+COMMENT ON TABLE deliveries IS 'Teslimatlar (görevler). Bir gönüllünün üstlendiği iş. match_id + request_id + center_id üçlüsü, eşleşmedeki değerlerle aynı olmak zorunda (bileşik yabancı anahtar). Zaman damgaları ve “kim yaptı” sütunları tam zaman çizelgesini verdiği için ayrı geçmiş tablosu yoktur.';
+COMMENT ON COLUMN deliveries.id IS 'Birincil anahtar';
+COMMENT ON COLUMN deliveries.match_id IS 'Hangi eşleşmeden doğdu';
+COMMENT ON COLUMN deliveries.request_id IS 'Hangi talep';
+COMMENT ON COLUMN deliveries.center_id IS 'Paketin çıktığı merkez';
+COMMENT ON COLUMN deliveries.volunteer_id IS 'Görevi üstlenen gönüllü';
+COMMENT ON COLUMN deliveries.status IS 'ASSIGNED → PREPARING → IN_TRANSIT → DELIVERED / CANCELLED';
+COMMENT ON COLUMN deliveries.prepared_at IS 'Paketin hazırlandığı an';
+COMMENT ON COLUMN deliveries.prepared_by IS 'Paketi hazırlayan kişi';
+COMMENT ON COLUMN deliveries.picked_up_at IS 'Merkezden çıkış anı';
+COMMENT ON COLUMN deliveries.picked_up_by IS 'Çıkış QR''ını okutan kişi';
+COMMENT ON COLUMN deliveries.delivered_at IS 'Teslim anı';
+COMMENT ON COLUMN deliveries.delivered_verified_by IS 'Sahada teslimi doğrulayan saha görevlisi';
+COMMENT ON COLUMN deliveries.cancelled_at IS 'İptal anı';
+COMMENT ON COLUMN deliveries.cancel_reason IS 'İptal nedeni';
+COMMENT ON COLUMN deliveries.created_at IS 'Görevin üstlenildiği an';
+COMMENT ON COLUMN deliveries.updated_at IS 'Son değişiklik zamanı';
+
+-- qr_tokens : QR kodları
+COMMENT ON TABLE qr_tokens IS 'QR kodları. Her teslimat için iki tek kullanımlık kod: merkezden çıkış ve sahada teslim. Kodun kendisi değil SHA-256 hash''i saklanır.';
+COMMENT ON COLUMN qr_tokens.id IS 'Birincil anahtar';
+COMMENT ON COLUMN qr_tokens.delivery_id IS 'Hangi teslimat';
+COMMENT ON COLUMN qr_tokens.purpose IS 'PICKUP merkezden çıkış / DROPOFF sahada teslim';
+COMMENT ON COLUMN qr_tokens.token_hash IS 'Kodun şifrelenmiş hali; kodun kendisi saklanmaz';
+COMMENT ON COLUMN qr_tokens.expires_at IS 'Son geçerlilik zamanı (varsayılan 24 saat)';
+COMMENT ON COLUMN qr_tokens.used_at IS 'Okutulma zamanı; dolu ise kod bir daha kullanılamaz';
+COMMENT ON COLUMN qr_tokens.used_by IS 'Kodu okutan kişi';
+COMMENT ON COLUMN qr_tokens.revoked_at IS 'İptal zamanı; yeni kod üretilince eskisi iptal olur';
+COMMENT ON COLUMN qr_tokens.created_by IS 'Kodu üreten kişi';
+COMMENT ON COLUMN qr_tokens.created_at IS 'Üretim zamanı';
+
+-- blocks : Blockchain kayıtları
+COMMENT ON TABLE blocks IS 'Blockchain kayıtları. Tamamlanan her teslimatın parmak izi. Her blok bir öncekine bağlıdır; kayıt sonradan değişirse hash tutmaz. Kişisel veri içermez.';
+COMMENT ON COLUMN blocks.block_index IS 'Bloğun sıra numarası ve birincil anahtarı; 0 = genesis blok';
+COMMENT ON COLUMN blocks.delivery_id IS 'Hangi teslimat; yalnız genesis blokta boş';
+COMMENT ON COLUMN blocks.delivery_hash IS 'Teslimat bilgilerinin parmak izi — tamper kanıtı';
+COMMENT ON COLUMN blocks.previous_hash IS 'Önceki bloğun parmak izi; zinciri bağlayan halka';
+COMMENT ON COLUMN blocks.current_hash IS 'Bu bloğun parmak izi';
+COMMENT ON COLUMN blocks.block_timestamp IS 'Bloğun oluşturulma anı; saniyeye yuvarlı, hash''e dahil';
+
+-- request_status_history : Talep durum geçmişi
+COMMENT ON TABLE request_status_history IS 'Talep durum geçmişi. Talepte durum başına zaman damgası olmadığı için gerekli: “bu talep ne zaman eşleşti” sorusunun cevabı başka yerde durmuyor.';
+COMMENT ON COLUMN request_status_history.id IS 'Birincil anahtar';
+COMMENT ON COLUMN request_status_history.request_id IS 'Hangi talep';
+COMMENT ON COLUMN request_status_history.old_status IS 'Önceki durum; ilk kayıtta boş';
+COMMENT ON COLUMN request_status_history.new_status IS 'Yeni durum';
+COMMENT ON COLUMN request_status_history.changed_by IS 'Değişikliği yapan kişi';
+COMMENT ON COLUMN request_status_history.changed_at IS 'Değişiklik anı';
+COMMENT ON COLUMN request_status_history.note IS 'Not (örneğin iptal nedeni)';
+
+-- predictions : Yapay zeka tahmin başlığı
+COMMENT ON TABLE predictions IS 'Yapay zeka tahmin başlığı. NLP modelinin açıklama metninden çıkardığı öneri. İkinci aşama modülü.';
+COMMENT ON COLUMN predictions.id IS 'Birincil anahtar';
+COMMENT ON COLUMN predictions.request_id IS 'Tahminden sonra talep kaydedildiyse hangisi; değilse boş';
+COMMENT ON COLUMN predictions.input_text IS 'Modele verilen açıklama metni';
+COMMENT ON COLUMN predictions.model_name IS 'LSTM veya BiLSTM';
+COMMENT ON COLUMN predictions.model_version IS 'Model sürümü';
+COMMENT ON COLUMN predictions.threshold IS 'Eşik değer; bunu geçen kategoriler önerilmiş sayılır';
+COMMENT ON COLUMN predictions.latency_ms IS 'Tahminin kaç milisaniye sürdüğü';
+COMMENT ON COLUMN predictions.created_by IS 'Tahmini isteyen kullanıcı';
+COMMENT ON COLUMN predictions.created_at IS 'Tahmin zamanı';
+
+-- prediction_scores : Kategori başına olasılık
+COMMENT ON TABLE prediction_scores IS 'Kategori başına olasılık. 1NF düzeltmesinin ürünü: olasılıklar eskiden tek bir JSON sütunundaydı, artık her kategori kendi satırında ve kategoriye yabancı anahtar kurulabiliyor.';
+COMMENT ON COLUMN prediction_scores.prediction_id IS 'Hangi tahmin (category_id ile birlikte birincil anahtar)';
+COMMENT ON COLUMN prediction_scores.category_id IS 'Hangi kategori';
+COMMENT ON COLUMN prediction_scores.probability IS 'Modelin verdiği olasılık, 0 ile 1 arası';
+
+
+-- ---------------------------------------------------------------------
+--  v_data_dictionary
+--
+--    NE DÖNER : 14 tablonun ve 119 sütunun adı, tipi, zorunluluğu ve
+--               açıklaması - tek sorguda.
+--    NASIL    : Yukarıdaki COMMENT ON ifadelerini PostgreSQL'in kendi
+--               sistem kataloğundan geri okur. Yani açıklamalar ayrı
+--               bir yerde değil, şemanın içinde yaşar ve şema
+--               değiştikçe güncel kalır.
+--    KULLANIM : Rapor ekindeki veri sözlüğü tablosu buradan çıkar:
+--               SELECT * FROM v_data_dictionary ORDER BY tablo, sira;
+-- ---------------------------------------------------------------------
+CREATE OR REPLACE VIEW v_data_dictionary AS
+SELECT c.relname::text                      AS tablo,
+       obj_description(c.oid, 'pg_class')   AS tablo_aciklamasi,
+       a.attnum                             AS sira,
+       a.attname::text                      AS sutun,
+       format_type(a.atttypid, a.atttypmod) AS tip,
+       NOT a.attnotnull                     AS bos_olabilir,
+       col_description(c.oid, a.attnum)     AS sutun_aciklamasi
+FROM pg_class c
+JOIN pg_namespace n ON n.oid = c.relnamespace
+JOIN pg_attribute a ON a.attrelid = c.oid
+WHERE n.nspname = 'public' AND c.relkind = 'r'
+  AND a.attnum > 0 AND NOT a.attisdropped
+ORDER BY c.relname, a.attnum;
 
