@@ -1,6 +1,6 @@
 # YardımAğı — Backend (FastAPI)
 
-25 uç nokta, 5 dosya. Projenin çalışması için gereken her şey, fazlası yok.
+25 uç nokta, 5 dosya. Projenin çalışması için gereken her şey, fazlası yok. 
 
 ## Çalıştırma
 
