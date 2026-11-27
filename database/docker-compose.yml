@@ -1,0 +1,42 @@
+# =====================================================================
+#  YardımAğı - veritabanı geliştirme ortamı
+#
+#  Başlat :  docker compose up -d
+#  Durdur :  docker compose down          (veri kalır)
+#  SIFIRLA:  docker compose down -v       (veriyi de siler)
+#  Günlük :  docker compose logs -f db
+#
+#  initdb/ klasöründeki dosyalar YALNIZCA veritabanı ilk kez
+#  oluşturulurken, alfabetik sırayla çalışır. Şemayı değiştirdiyseniz
+#  "down -v" yapıp yeniden "up" edin, yoksa eski şema kalır.
+# =====================================================================
+
+services:
+  db:
+    image: postgres:16-alpine
+    container_name: yardimagi_db
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-postgres}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-postgres}
+      POSTGRES_DB: ${POSTGRES_DB:-yardimagi}
+      # Türkçe karakterler için UTF-8 şart
+      POSTGRES_INITDB_ARGS: "--encoding=UTF8 --locale=C.UTF-8"
+    ports:
+      - "${DB_PORT:-5432}:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+      # Şema (zorunlu)
+      - ./initdb/01_schema.sql:/docker-entrypoint-initdb.d/01_schema.sql:ro
+      # Demo veri (isteğe bağlı) - istemezseniz bu satırı silin
+      - ./initdb/02_demo.sql:/docker-entrypoint-initdb.d/02_demo.sql:ro
+      - ./initdb/03_blok_icerigi.sql:/docker-entrypoint-initdb.d/03_blok_icerigi.sql:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+      start_period: 30s
+
+volumes:
+  pgdata:
