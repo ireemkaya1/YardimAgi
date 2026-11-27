@@ -11,7 +11,7 @@ from fastapi import APIRouter, Depends
 from pydantic import BaseModel, Field
 
 from ..db import get_conn
-from ..security import current_user
+from ..security import current_user, require_role
 
 router = APIRouter(tags=["Görevler ve teslimat"])
 
@@ -65,9 +65,17 @@ async def my_tasks(
 
 @router.get("/centers/{center_id}/deliveries", summary="Merkezin teslimat kuyruğu")
 async def center_deliveries(
-    center_id: int, user=Depends(current_user), conn=Depends(get_conn)
+    center_id: int,
+    user=Depends(require_role("ATTENDANT", "ADMIN")),
+    conn=Depends(get_conn),
 ):
-    """Görevlinin ekranı: hangi paket hazırlanmayı bekliyor, hangisi yolda."""
+    """
+    Görevlinin ekranı: hangi paket hazırlanmayı bekliyor, hangisi yolda.
+
+    Gönüllüye KAPALI: yanıt gönüllü telefonunu (volunteer_phone) içeriyor
+    ve her merkezin kuyruğu sorgulanabiliyor. Gönüllü kendi görevini
+    /tasks/mine ile görüyor.
+    """
     rows = await conn.fetch(
         """
         SELECT * FROM v_delivery_detail

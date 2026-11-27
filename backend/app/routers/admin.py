@@ -1,8 +1,15 @@
 """
 Yönetim — admin web panelinin kullanacağı uç noktalar.
 
-Hepsi ADMIN rolü ister. Kontrolü burada yapmıyoruz: her yordamın ilk
-satırı rolü doğruluyor ve uygun değilse YA403 fırlatıyor.
+Hepsi ADMIN rolü ister, ama kontrol iki ayrı yerden geliyor:
+
+  YAZMA  (`CALL sp_admin_...`) -> yordamın ilk satırı rolü doğruluyor.
+  OKUMA  (doğrudan SELECT)     -> `Depends(require_role("ADMIN"))`.
+
+Okuma uç noktalarında yordam yok, dolayısıyla onları açıkta bırakmak
+geçerli token'ı olan her rolün kullanıcı listesini (e-posta, telefon)
+okuyabilmesi demekti. require_role aynı veritabanı fonksiyonunu çağırıyor,
+yani kural hâlâ tek yerde duruyor.
 
 PAROLA: Python'da değil, SQL tarafında crypt(..., gen_salt('bf',10)) ile
 hash'leniyor — giriş sorgusunun kullandığı yöntemle birebir aynı olsun diye.
@@ -11,7 +18,7 @@ from fastapi import APIRouter, Depends
 from pydantic import BaseModel, Field
 
 from ..db import get_conn
-from ..security import current_user
+from ..security import current_user, require_role
 
 # E-posta alanı: EmailStr DEĞİL.
 #
@@ -59,14 +66,14 @@ class CenterIn(BaseModel):
 
 
 @router.get("/dashboard", summary="Yönetici özeti")
-async def dashboard(user=Depends(current_user), conn=Depends(get_conn)):
+async def dashboard(user=Depends(require_role("ADMIN")), conn=Depends(get_conn)):
     """Açık talep, yoldaki teslimat, kritik stok, zincir uzunluğu — tek satır."""
     row = await conn.fetchrow("SELECT * FROM v_admin_dashboard")
     return dict(row)
 
 
 @router.get("/users", summary="Kullanıcı listesi")
-async def list_users(user=Depends(current_user), conn=Depends(get_conn)):
+async def list_users(user=Depends(require_role("ADMIN")), conn=Depends(get_conn)):
     # password_hash sorguya hiç konmuyor.
     rows = await conn.fetch(
         """
@@ -81,7 +88,7 @@ async def list_users(user=Depends(current_user), conn=Depends(get_conn)):
 
 
 @router.get("/users/pending", summary="Onay bekleyen hesaplar")
-async def pending_users(user=Depends(current_user), conn=Depends(get_conn)):
+async def pending_users(user=Depends(require_role("ADMIN")), conn=Depends(get_conn)):
     """
     Kayıt olmuş ama henüz aktif edilmemiş hesaplar - çoğunlukla onay
     bekleyen saha görevlileri.
@@ -146,7 +153,7 @@ async def save_center(
 
 
 @router.get("/chain", summary="Blok zinciri denetimi")
-async def chain_audit(user=Depends(current_user), conn=Depends(get_conn)):
+async def chain_audit(user=Depends(require_role("ADMIN")), conn=Depends(get_conn)):
     """
     Sunumda gösterilecek ekran. Zincirin sağlam olup olmadığı ve blok
     blok döküm tek yanıtta.

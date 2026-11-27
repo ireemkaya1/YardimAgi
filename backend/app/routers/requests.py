@@ -4,14 +4,23 @@ Talepler.
 Yazma  -> CALL sp_...   (INOUT değerleri satır olarak döner)
 Okuma  -> SELECT * FROM v_...
 
-Rol kontrolü burada yok; yordamlar yapıyor. Gönüllü talep açmayı denerse
-veritabanı YA403 fırlatır, errors.py onu 403'e çevirir.
+YAZMA uç noktalarında rol kontrolü burada yok; yordamlar yapıyor. Gönüllü
+talep açmayı denerse veritabanı YA403 fırlatır, errors.py onu 403'e çevirir.
+
+OKUMA uç noktalarında yordam olmadığı için require_role gerekiyor.
+v_open_requests ve v_request_detail görünümleri afetzedenin adını ve
+telefonunu içeriyor (contact_name, contact_phone); bunlar yalnızca saha
+görevlisine ve yöneticiye açık.
+
+Gönüllünün göreceği ekran bunlar değil: /tasks/available ve /tasks/mine.
+O görünümlerde iletişim bilgisi hiç yok, gönüllü de zaten adresten
+fazlasına ihtiyaç duymuyor.
 """
 from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel, Field
 
 from ..db import get_conn
-from ..security import current_user
+from ..security import current_user, require_role
 
 router = APIRouter(prefix="/requests", tags=["Talepler"])
 
@@ -69,9 +78,16 @@ async def create_request(
 
 @router.get("/open", summary="Açık talepler")
 async def open_requests(
-    limit: int = Query(50, le=200), user=Depends(current_user), conn=Depends(get_conn)
+    limit: int = Query(50, le=200),
+    user=Depends(require_role("ATTENDANT", "ADMIN")),
+    conn=Depends(get_conn),
 ):
-    """Aciliyet ve yaşa göre sıralı. Saha görevlisinin ana ekranı."""
+    """
+    Aciliyet ve yaşa göre sıralı. Saha görevlisinin ana ekranı.
+
+    Gönüllüye KAPALI: yanıt afetzede telefonunu içeriyor. Gönüllünün
+    karşılığı /tasks/available.
+    """
     rows = await conn.fetch("SELECT * FROM v_open_requests LIMIT $1", limit)
     return [dict(r) for r in rows]
 
@@ -101,8 +117,15 @@ async def my_requests(
 
 @router.get("/{request_id}", summary="Talep detayı")
 async def request_detail(
-    request_id: int, user=Depends(current_user), conn=Depends(get_conn)
+    request_id: int,
+    user=Depends(require_role("ATTENDANT", "ADMIN")),
+    conn=Depends(get_conn),
 ):
+    """
+    Gönüllüye KAPALI: yanıt afetzede adını ve telefonunu içeriyor, hem de
+    herhangi bir id ile sorgulanabiliyor. Gönüllü kendi görevinin
+    ayrıntısını /tasks/mine ile görüyor.
+    """
     row = await conn.fetchrow("SELECT * FROM v_request_detail WHERE id = $1", request_id)
     if row is None:
         raise HTTPException(404, "Talep bulunamadı")
@@ -111,7 +134,9 @@ async def request_detail(
 
 @router.get("/{request_id}/matching-analysis", summary="Hangi merkez neden seçilemiyor")
 async def matching_analysis(
-    request_id: int, user=Depends(current_user), conn=Depends(get_conn)
+    request_id: int,
+    user=Depends(require_role("ATTENDANT", "ADMIN")),
+    conn=Depends(get_conn),
 ):
     """
     Her merkez için mesafe, karşılayabiliyor mu, hangi kalem eksik.

@@ -18,6 +18,8 @@ import jwt
 from fastapi import Depends, HTTPException, status
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 
+from .db import get_conn
+
 JWT_SECRET = os.getenv("JWT_SECRET", "degistirin")
 JWT_ALG = "HS256"
 JWT_EXPIRE_MINUTES = int(os.getenv("JWT_EXPIRE_MINUTES", "720"))
@@ -64,3 +66,36 @@ async def current_user(
         return {"id": int(payload["sub"]), "role": payload["role"]}
     except (jwt.PyJWTError, KeyError, ValueError):
         raise hata
+
+
+def require_role(*roller: str):
+    """
+    Rol kontrolü yapan bağımlılık üreticisi. Uç noktada:
+
+        async def endpoint(user = Depends(require_role("ADMIN"))):
+
+    NEDEN GEREKLİ
+    -------------
+    Yazma uç noktaları `CALL sp_...` kullanıyor ve her yordamın ilk satırı
+    fn_require_user ile rolü doğruluyor. Ama OKUMA uç noktaları doğrudan
+    SELECT çalıştırıyor; orada yordam yok, dolayısıyla rol kontrolü de
+    yoktu. Geçerli token'ı olan herhangi bir rol yönetim verisini ve
+    afetzede iletişim bilgisini okuyabiliyordu.
+
+    NEDEN PYTHON'DA "role == 'ADMIN'" YAZMIYORUZ
+    --------------------------------------------
+    Token'daki rol, giriş anındaki roldür. Kullanıcı sonradan pasife
+    alındıysa veya rolü değiştiyse token hâlâ eski bilgiyi taşır.
+    fn_require_user veritabanındaki GÜNCEL satıra bakıyor: kullanıcı pasif
+    ise YA401, rol uygun değilse YA403 fırlatır. Böylece pasife alınan
+    hesabın elindeki token anında işlemez hale gelir.
+
+    Yetki kuralı da tek yerde kalır: veritabanında.
+    """
+    async def dep(user=Depends(current_user), conn=Depends(get_conn)) -> dict:
+        await conn.execute(
+            "SELECT fn_require_user($1, $2::user_role[])", user["id"], list(roller)
+        )
+        return user
+
+    return dep
